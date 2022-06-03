@@ -1,0 +1,411 @@
+#autor: Imenko Prezimić INDEX ra1234-2018
+
+.section .data
+ispis1:  .ascii "Unesite vrednosti r1 r2 gr: \0"
+ispis2:  .ascii "Unesite adresiranje: \0"
+ispis3:  .ascii "Adresa: \0"
+greska1: .ascii "Adresa nije validna.\n\0"
+greska2: .ascii "Greska kod adrese.\n\0"
+greska3: .ascii "Greska kod adresiranja\n\0"
+
+string1: .fill 101, 1, 42
+string2: .fill 101, 1, 42
+
+greska: .long 0
+
+niz_prvi: .fill 3, 4, 0
+
+registar_jedan: .long 0
+registar_dva: .long 0
+
+mnozilac: .long 0
+gornja_granica: .long 0
+
+rezultat: .long 0
+
+.section .text
+.globl main
+
+.macro ispisi_string str
+	movl $4, %eax
+	movl $1, %ebx
+	movl $\str, %ecx
+	movl $0, %edx
+1:
+	cmpb $0, (%ecx)
+	je 2f
+	
+	incl %ecx
+	incl %edx
+	jmp 1b
+2:
+	movl $\str, %ecx
+	int $0x80
+.endm
+
+.macro unesi_string str, int
+	movl $3, %eax	
+	movl $0, %ebx
+	movl $\str, %ecx
+	movl $\int, %edx
+	int $0x80
+	
+	decl %eax
+	movb $0, \str(, %eax, 1)
+.endm
+
+main:
+	ispisi_string ispis1
+	unesi_string string1, 101
+	
+	pushl $string1
+	call proveri_string_prvi
+	addl $4, %esp
+	
+	cmpl $1, greska
+	je ispisi_gresku_2
+	
+	ispisi_string ispis2
+	unesi_string string2, 101
+
+	cmpl $1, greska
+	je ispisi_gresku_2
+
+	pushl $string1
+	call konvertuj_u_niz
+	addl $4, %esp
+
+	cmpl $2, greska
+	je ispisi_gresku_2
+
+	movl $string2, %esi	# adresa string2
+	
+	movl $2, %edi
+	
+	movl niz_prvi(, %edi, 4), %edi
+	movl %edi, gornja_granica
+	
+	movl $0, %edi
+	
+	subl $1, gornja_granica
+
+izvrsi_program:
+	cmpb $'(', (%esi)
+	je preskoci_element
+	
+	cmpb $')', (%esi)
+	je zavrsi_unos
+	
+	cmpb $',', (%esi)
+	je preskoci_element
+	
+	cmpb $'r', (%esi)
+	je registar_je
+	
+	cmpb $'0', (%esi)
+	jl ispisi_gresku_3
+	
+	cmpb $'9', (%esi)
+	jg ispisi_gresku_3
+	
+	pushl %esi	# adresa trenutna
+	call konvertuj_mnozilac
+	addl $4, %esp
+	
+	cmpl $3, greska
+	je ispisi_gresku_3
+	
+preskoci_element:
+	incl %esi
+	jmp izvrsi_program
+
+registar_je:
+	incl %esi
+	
+	cmpb $'1', (%esi)
+	je registar_prvi
+	
+	cmpb $'2', (%esi)
+	je registar_drugi
+	
+	jmp ispisi_gresku_3
+	
+registar_prvi:
+	movl niz_prvi(, %edi, 4), %edx
+	movl %edx, registar_jedan
+	incl %edi
+	incl %esi
+	
+	jmp izvrsi_program
+	
+registar_drugi:
+	movl niz_prvi(, %edi, 4), %edx
+	movl %edx, registar_dva
+	incl %edi
+	incl %esi
+	
+	jmp izvrsi_program
+	
+zavrsi_unos:
+	movl registar_jedan, %eax
+	movl %eax, rezultat
+	
+	movl mnozilac, %ebx
+	movl registar_dva, %eax
+	
+	mull %ebx
+	jc ispisi_gresku_1
+	
+	addl %eax, rezultat
+	movl rezultat, %eax
+	
+	cmpl %eax, gornja_granica
+	jl ispisi_gresku_1
+	
+	pushl %eax	# broj za konv
+	call konvertuj_u_string
+	addl $4, %esp
+	
+	ispisi_string ispis3
+	ispisi_string string1
+	
+	movl $0, %ebx
+	jmp kraj
+
+ispisi_gresku_1:
+	ispisi_string greska1
+	movl $1, %ebx
+	jmp kraj
+
+ispisi_gresku_2:
+	ispisi_string greska2
+	unesi_string string2, 101
+	
+	movl $1, %ebx
+	jmp kraj
+
+ispisi_gresku_3:
+	ispisi_string greska3
+	movl $1, %ebx
+	jmp kraj
+
+kraj:
+	movl $1, %eax
+	int $0x80
+	
+	
+	
+	
+	
+	
+#################################
+proveri_string_prvi:
+	pushl %ebp
+	movl %esp, %ebp
+	pushl %esi
+	
+	movl 8(%ebp), %esi 	# adresa stringa
+
+petlja_pp1:
+	cmpb $0, (%esi)
+	je zavrsi_pp1
+	
+	cmpb $' ', (%esi)
+	je preskoci_el_pp1
+	
+	cmpb $'0', (%esi)
+	jl greska_pp1
+	
+	cmpb $'9', (%esi)
+	jg greska_pp1
+	
+preskoci_el_pp1:
+	incl %esi
+	jmp petlja_pp1
+
+greska_pp1:
+	movl $1, greska
+	jmp zavrsi_pp1
+	
+zavrsi_pp1:
+	popl %esi
+	movl %ebp, %esp
+	popl %ebp
+	
+	ret
+	
+#################################
+konvertuj_u_niz:
+	pushl %ebp
+	movl %esp, %ebp
+	pushl %esi
+	pushl %ebx
+	pushl %edi
+	
+	movl 8(%ebp), %esi	#adresa stringa
+	
+	movl $10, %ebx
+	movl $0, %eax
+	movl $0, %ecx
+	
+	movl $0, %edi
+	
+petlja_pp2:
+	cmpb $' ', (%esi)
+	je dodaj_element_u_niz_pp2
+	
+	cmpb $0, (%esi)
+	je dodaj_krajnji_element_u_niz_pp2
+	
+	movb (%esi), %cl
+	subb $48, %cl
+	
+	mull %ebx
+	jc prekoracenje_pp2
+	
+	addl %ecx, %eax
+	jc prekoracenje_pp2
+	
+	incl %esi
+	jmp petlja_pp2
+	
+prekoracenje_pp2:
+	movl $2, greska
+	jmp zavrsi_pp2
+
+dodaj_element_u_niz_pp2:
+	movl %eax, niz_prvi(, %edi, 4)
+	
+	incl %edi
+	incl %esi
+	
+	movl $10, %ebx
+	movl $0, %eax
+	movl $0, %ecx
+
+	jmp petlja_pp2
+	
+dodaj_krajnji_element_u_niz_pp2:
+	movl %eax, niz_prvi(, %edi, 4)
+	incl %edi
+	jmp zavrsi_pp2
+	
+zavrsi_pp2:
+	popl %edi
+	popl %ebx
+	popl %esi
+	movl %ebp, %esp
+	popl %ebp
+	
+	ret
+	
+#################################
+konvertuj_mnozilac:
+	pushl %ebp
+	movl %esp, %ebp
+	
+	pushl %esi
+	pushl %edi
+	
+	movl 8(%ebp), %esi	# adresa trenutnog broja
+
+	movl $10, %ebx
+	movl $0, %eax
+	movl $0, %ecx
+
+petlja_pp3:
+	cmpb $')', (%esi)
+	je zavrsi_pp3
+	
+	movb (%esi), %cl
+	subb $48, %cl
+	
+	mull %ebx
+	
+	addl %ecx, %eax
+	
+	incl %esi
+	jmp petlja_pp3
+	
+zavrsi_pp3:
+	cmpl $1, %eax
+	je zavrsi_pp3_uspesno
+	
+	cmpl $2, %eax
+	je zavrsi_pp3_uspesno
+	
+	cmpl $4, %eax
+	je zavrsi_pp3_uspesno
+	
+	cmpl $8, %eax
+	je zavrsi_pp3_uspesno
+	
+	movl $3, greska
+	jmp zavrsi_pp3_kraj
+	
+zavrsi_pp3_uspesno:
+	movl %eax, mnozilac
+zavrsi_pp3_kraj:
+	popl %edi
+	popl %esi
+	
+	movl %ebp, %esp
+	popl %ebp
+	
+	ret
+	
+#################################
+konvertuj_u_string:
+	pushl %ebp
+	movl %esp, %ebp
+	
+	pushl %esi
+	pushl %edi
+	pushl %ebx
+	
+	movl 8(%ebp), %eax	# broj
+	movl $string1, %esi
+	
+	movl $10, %ebx
+
+petlja_pp4:
+	cmpl $0, %eax
+	je okreni_pre_pp4
+	
+	movl $0, %edx
+	divl %ebx
+	
+	addb $48, %dl
+	movb %dl, (%esi)
+	
+	incl %esi
+	jmp petlja_pp4
+
+okreni_pre_pp4:
+	movb $0, (%esi)
+	decl %esi
+	
+	movl $string1, %edi
+
+okreni_pp4:
+	cmpl %esi, %edi
+	jae zavrsi_pp4
+	
+	movb (%esi), %al
+	movb (%edi), %ah
+	movb %al, (%edi)
+	movb %ah, (%esi)
+	
+	incl %edi
+	decl %esi
+	jmp okreni_pp4
+
+zavrsi_pp4:
+	popl %ebx
+	popl %edi
+	popl %esi
+	
+	movl %ebp, %esp
+	popl %ebp
+	
+	ret
